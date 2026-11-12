@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+    <h2>Создать новую запись</h2>
+    <form method="POST">
+        <input type="text" name="title" placeholder="Заголовок записи" required>
+        <textarea name="content" rows="5" placeholder="Текст записи..." required></textarea>
+        <button type="submit">Опубликовать</button>
+    </form>
+{% endblock %}

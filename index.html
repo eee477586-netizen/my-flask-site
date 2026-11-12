@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <div style="text-align: center; margin-bottom: 40px;">
+        <h1>Добро пожаловать в NeonFlask!</h1>
+        <p style="font-size: 18px; color: #b0c4de; line-height: 1.6;">
+            Это учебный проект, созданный на Python. <br>
+            Здесь можно писать посты, играть в шашки с ботом и смотреть секретную админку.
+        </p>
+    </div>
+    <hr style="border-color: rgba(255,255,255,0.1); margin-bottom: 30px;">
+    <h2>Последние записи</h2>
+    {% for post in posts %}
+        <div style="background: rgba(0,0,0,0.3); padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #00f2fe;">
+            <h3 style="margin: 0 0 10px 0; color: #00f2fe; text-shadow: 0 0 5px #00f2fe;">{{ post.title }}</h3>
+            <small style="color: #888;">Автор: {{ post.author.username }}</small>
+            <p style="margin-top: 15px; font-size: 16px;">{{ post.content }}</p>
+        </div>
+    {% else %}
+        <p style="text-align: center; color: #888;">Пока нет ни одной записи.</p>
+    {% endfor %}
+{% endblock %}

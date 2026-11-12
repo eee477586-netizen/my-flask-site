@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    /* ... (все стили остаются прежними, можешь скопировать их из предыдущего сообщения) ... */
+    .game-container { display: flex; flex-direction: column; align-items: center; margin-top: 20px; }
+    .card-table { width: 100%; max-width: 800px; background: rgba(0, 0, 0, 0.4); border: 2px solid #00f2fe; border-radius: 15px; padding: 20px; box-shadow: 0 0 20px rgba(0, 242, 254, 0.3); min-height: 450px; display: flex; flex-direction: column; justify-content: space-between; }
+    .row { display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap; min-height: 100px; }
+    .card { width: 70px; height: 105px; background: #ffffff; border-radius: 6px; border: 1px solid #ccc; display: flex; flex-direction: column; justify-content: space-between; padding: 5px; font-family: 'Arial', sans-serif; font-weight: bold; cursor: pointer; user-select: none; transition: transform 0.2s, box-shadow 0.2s; box-shadow: 0 4px 8px rgba(0,0,0,0.6); position: relative; }
+    .card:hover { transform: translateY(-15px); box-shadow: 0 10px 15px rgba(0, 242, 254, 0.4); }
+    .card.red { color: #e74c3c; }
+    .card.black { color: #2c3e50; }
+    .card.back { background: repeating-linear-gradient(45deg, #2c3e50, #2c3e50 10px, #34495e 10px, #34495e 20px); cursor: default; border: 2px solid #1a252f; }
+    .card.back:hover { transform: none; box-shadow: 0 4px 8px rgba(0,0,0,0.6); }
+    .card-corner { display: flex; flex-direction: column; align-items: center; line-height: 1; }
+    .card-corner.bottom { align-self: flex-end; transform: rotate(180deg); }
+    .card-value { font-size: 18px; }
+    .card-suit-svg { width: 14px; height: 14px; margin-top: 2px; fill: currentColor; }
+    .card-center-svg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 36px; height: 36px; fill: currentColor; opacity: 0.8; }
+    .controls { margin-top: 20px; text-align: center; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;}
+    .btn { padding: 10px 20px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; margin: 5px; font-family: 'Montserrat', sans-serif; font-size: 16px; transition: 0.3s;}
+    .btn-action { background: linear-gradient(45deg, #00f2fe, #4facfe); color: #000; }
+    .btn-action:hover { box-shadow: 0 0 15px #00f2fe; }
+    .btn-pass { background: linear-gradient(45deg, #e74c3c, #c0392b); color: #fff; }
+    .btn-pass:hover { box-shadow: 0 0 15px #e74c3c; }
+    .btn-pass:disabled { background: #555; cursor: not-allowed; opacity: 0.5; box-shadow: none; }
+    .btn-translate { background: linear-gradient(45deg, #9b59b6, #8e44ad); color: #fff; }
+    .btn-translate:hover { box-shadow: 0 0 15px #9b59b6; }
+    .btn-translate:disabled { background: #555; cursor: not-allowed; opacity: 0.5; box-shadow: none; }
+    .status-text { color: #ff007f; text-shadow: 0 0 5px #ff007f; font-size: 20px; margin-bottom: 10px; text-align: center;}
+    .history-table { width: 100%; margin-top: 30px; border-collapse: collapse; }
+    .history-table th, .history-table td { padding: 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); text-align: center; }
+    .history-table th { color: #00f2fe; }
+</style>
+
+<div class="game-container">
+    <!-- Заголовок меняется в зависимости от режима -->
+    <h2 style="color: #00f2fe; text-shadow: 0 0 10px #00f2fe;" id="gameTitle">
+        {% if mode == 'translate' %} Переводной Дурак {% else %} Обычный Дурак {% endif %}
+    </h2>
+    <div class="status-text" id="statusText">Нажми "Новая игра", чтобы начать</div>
+
+    <div class="card-table">
+        <div class="row" id="botHand"></div>
+        <div class="row" id="tableArea" style="background: rgba(46, 204, 113, 0.1); border-radius: 10px; padding: 10px; align-items: flex-start;">
+            <span id="tableMessage" style="color: #888; width: 100%; text-align: center; margin-top: 30px;">Здесь будут карты</span>
+        </div>
+        <div class="row" id="playerHand"></div>
+    </div>
+
+    <div class="controls">
+        <a href="/cards" class="btn" style="background: #555; color: white; text-decoration: none; display: inline-block;">Назад в меню</a>
+        <button class="btn btn-action" onclick="startNewGame()">Новая игра</button>
+
+        <!-- Кнопка перевода показывается ТОЛЬКО в режиме переводного -->
+        {% if mode == 'translate' %}
+        <button class="btn btn-translate" id="translateBtn" onclick="translateCards()" disabled>Перевести</button>
+        {% endif %}
+
+        <button class="btn btn-pass" id="passBtn" onclick="passTurn()" disabled>Сказать "Бито"</button>
+    </div>
+</div>
+
+<!-- Таблица истории (остается без изменений) -->
+<h3 style="margin-top: 40px; color: #fff; border-bottom: 2px solid #ff007f; padding-bottom: 10px;">Последние игры</h3>
+<table class="history-table">
+    <thead><tr><th>Игрок</th><th>Результат</th><th>Дата</th></tr></thead>
+    <tbody id="historyBody">
+        {% for game in recent_games %}
+        <tr>
+            <td>{{ game.player_name }}</td>
+            <td style="color: {% if game.result == 'Победа' %}#00f2fe{% else %}#e74c3c{% endif %};">{{ game.result }}</td>
+            <td>{{ game.date_played.strftime('%d.%m.%Y %H:%M') }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<script>
+    // Передаем режим игры из Python в JavaScript
+    const gameMode = "{{ mode }}";
+
+    let deck = [];
+    let playerHand = [];
+    let botHand = [];
+    let table = [];
+    let trumpSuit = '';
+    let turn = 'player';
+    let playerName = "{{ current_user.username if current_user.is_authenticated else 'Гость' }}";
+    let gameActive = false;
+
+    const suits = ['♠', '♥', '♦', '♣'];
+    const values = ['6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+
+    // ... (SVG иконки мастей остаются теми же, скопируй их из предыдущего кода) ...
+    const suitSVGs = {
+        '♠': `<svg viewBox="0 0 24 24"><path d="M12,2C12,2 5,9 5,13.5C5,16 7,18 9.5,18C10.5,18 11.5,17.5 12,17C12.5,17.5 13.5,18 14.5,18C17,18 19,16 19,13.5C19,9 12,2 12,2M12,18C11.5,18.5 10.5,19 9.5,19C6.5,19 4,16.5 4,13.5C4,9 10,3.5 12,2C14,3.5 20,9 20,13.5C20,16.5 17.5,19 14.5,19C13.5,19 12.5,18.5 12,18M12,18V22H10V18H12Z"/></svg>`,
+        '♥': `<svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`,
+        '♦': `<svg viewBox="0 0 24 24"><path d="M12 2L2 12l10 10 10-10L12 2z"/></svg>`,
+        '♣': `<svg viewBox="0 0 24 24"><path d="M12,2A3,3 0 0,0 9,5C9,6.05 9.54,6.96 10.3,7.5C8.88,8.6 7.5,10.15 7.5,12A4.5,4.5 0 0,0 12,16.5C12.5,16.5 13,16.4 13.5,16.2L12,22H14L15.5,16.2C16,16.4 16.5,16.5 17,16.5A4.5,4.5 0 0,0 21.5,12C21.5,10.15 20.12,8.6 18.7,7.5C19.46,6.96 20,6.05 20,5A3,3 0 0,0 12,2Z"/></svg>`
+    };
+
+    function createDeck() {
+        let d = [];
+        for (let s of suits) {
+            for (let v of values) {
+                d.push({ suit: s, value: v });
+            }
+        }
+        d.sort(() => Math.random() - 0.5);
+        return d;
+    }
+
+    function cardValue(card) { return values.indexOf(card.value); }
+
+    function canBeat(defender, attacker) {
+        if (defender.suit === attacker.suit) return cardValue(defender) > cardValue(attacker);
+        if (defender.suit === trumpSuit && attacker.suit !== trumpSuit) return true;
+        return false;
+    }
+
+    function renderCard(card, isHidden = false, onClick = null) {
+        const div = document.createElement('div');
+        div.className = 'card';
+        if (isHidden) {
+            div.classList.add('back');
+        } else {
+            const isRed = card.suit === '♥' || card.suit === '♦';
+            div.classList.add(isRed ? 'red' : 'black');
+            const svg = suitSVGs[card.suit];
+            div.innerHTML = `
+                <div class="card-corner top"><span class="card-value">${card.value}</span><div class="card-suit-svg">${svg}</div></div>
+                <div class="card-center-svg">${svg}</div>
+                <div class="card-corner bottom"><span class="card-value">${card.value}</span><div class="card-suit-svg">${svg}</div></div>
+            `;
+            if (onClick) div.onclick = onClick;
+        }
+        return div;
+    }
+
+    function updateUI() {
+        const botDiv = document.getElementById('botHand');
+        botDiv.innerHTML = '';
+        botHand.forEach(() => botDiv.appendChild(renderCard({}, true)));
+
+        const playerDiv = document.getElementById('playerHand');
+        playerDiv.innerHTML = '';
+        playerHand.forEach((card, index) => {
+            playerDiv.appendChild(renderCard(card, false, () => playCard(index)));
+        });
+
+        const tableDiv = document.getElementById('tableArea');
+        tableDiv.innerHTML = '';
+        if (table.length === 0) {
+            tableDiv.innerHTML = '<span style="color: #888; width: 100%; text-align: center; margin-top: 30px;">Здесь будут карты</span>';
+        } else {
+            table.forEach(pair => {
+                const pairDiv = document.createElement('div');
+                pairDiv.style.display = 'flex'; pairDiv.style.flexDirection = 'column';
+                pairDiv.style.gap = '0px'; pairDiv.style.marginTop = '-40px';
+                pairDiv.appendChild(renderCard(pair.attack));
+                if (pair.defend) {
+                    pairDiv.appendChild(renderCard(pair.defend));
+                } else {
+                    const emptyDiv = document.createElement('div');
+                    emptyDiv.style.height = '105px'; emptyDiv.style.width = '70px';
+                    pairDiv.appendChild(emptyDiv);
+                }
+                tableDiv.appendChild(pairDiv);
+            });
+        }
+
+        document.getElementById('passBtn').disabled = !(turn === 'player' && table.length > 0 && table.every(p => p.defend));
+
+        // Логика кнопки "Перевести" (только если выбран режим Переводной)
+        if (gameMode === 'translate') {
+            let translateBtn = document.getElementById('translateBtn');
+            if (translateBtn) {
+                let canTranslate = false;
+                if (turn === 'player' && table.length > 0) {
+                    let lastAttack = table.find(p => !p.defend);
+                    if (lastAttack) {
+                        let requiredValue = lastAttack.attack.value;
+                        canTranslate = playerHand.some(c => c.value === requiredValue);
+                    }
+                }
+                translateBtn.disabled = !canTranslate;
+            }
+        }
+    }
+
+    function startNewGame() {
+        deck = createDeck();
+        trumpSuit = deck[deck.length - 1].suit;
+        playerHand = deck.splice(0, 6).sort((a,b) => cardValue(a) - cardValue(b));
+        botHand = deck.splice(0, 6);
+        table = [];
+        turn = 'player';
+        gameActive = true;
+        document.getElementById('statusText').innerText = `Твой ход. Козырь: ${trumpSuit}`;
+        updateUI();
+    }
+
+    function playCard(index) {
+        if (!gameActive || turn !== 'player') return;
+        const card = playerHand[index];
+
+        if (table.length === 0) {
+            table.push({ attack: card, defend: null });
+            playerHand.splice(index, 1);
+            turn = 'bot';
+            document.getElementById('statusText').innerText = "Бот думает...";
+            updateUI();
+            setTimeout(botTurn, 1000);
+        } else {
+            const lastAttack = table.find(p => !p.defend);
+            if (lastAttack && canBeat(card, lastAttack.attack)) {
+                lastAttack.defend = card;
+                playerHand.splice(index, 1);
+                updateUI();
+                setTimeout(botTurn, 1000);
+            } else {
+                alert("Этой картой нельзя отбиться!");
+            }
+        }
+    }
+
+    function translateCards() {
+        if (gameMode !== 'translate' || turn !== 'player' || table.length === 0) return;
+
+        let lastAttack = table.find(p => !p.defend);
+        if (!lastAttack) return;
+
+        let requiredValue = lastAttack.attack.value;
+        let translateIdx = playerHand.findIndex(c => c.value === requiredValue);
+
+        if (translateIdx !== -1) {
+            let cardToTranslate = playerHand[translateIdx];
+            table.push({ attack: cardToTranslate, defend: null });
+            playerHand.splice(translateIdx, 1);
+            turn = 'bot';
+            document.getElementById('statusText').innerText = "Ты перевел! Бот думает...";
+            updateUI();
+            setTimeout(botTurn, 1000);
+        }
+    }
+
+    function botTurn() {
+        if (!gameActive || turn !== 'bot') return;
+        if (table.length === 0 || table.every(p => p.defend)) {
+            if (botHand.length === 0) { endGame("Победа"); return; }
+            let attackCard = null;
+            if (table.length > 0) {
+                let firstAttackValue = table[0].attack.value;
+                attackCard = botHand.find(c => c.value === firstAttackValue);
+            } else {
+                attackCard = botHand[0];
+            }
+            if (attackCard) {
+                let idx = botHand.indexOf(attackCard);
+                table.push({ attack: attackCard, defend: null });
+                botHand.splice(idx, 1);
+                turn = 'player';
+                document.getElementById('statusText').innerText = "Твой ход (Отбивайся!)";
+            } else {
+                turn = 'player';
+                document.getElementById('statusText').innerText = "Твой ход (Можешь сказать 'Бито')";
+            }
+        } else {
+            let attackPair = table.find(p => !p.defend);
+            let attackCard = attackPair.attack;
+            let defendCardIdx = botHand.findIndex(c => canBeat(c, attackCard));
+
+            if (defendCardIdx !== -1) {
+                attackPair.defend = botHand[defendCardIdx];
+                botHand.splice(defendCardIdx, 1);
+                turn = 'player';
+                document.getElementById('statusText').innerText = "Твой ход (Можешь подкинуть, перевести или сказать 'Бито')";
+            } else {
+                document.getElementById('statusText').innerText = "Бот не может отбиться и забирает карты!";
+                botHand.push(...table.map(p => p.attack));
+                table.forEach(p => { if (p.defend) botHand.push(p.defend); });
+                table = [];
+                turn = 'player';
+                dealCards();
+            }
+        }
+        updateUI();
+    }
+
+    function passTurn() {
+        if (turn !== 'player') return;
+        if (table.length > 0 && table.every(p => p.defend)) {
+            table = [];
+            dealCards();
+            turn = 'bot';
+            document.getElementById('statusText').innerText = "Бот думает...";
+            updateUI();
+            setTimeout(botTurn, 1000);
+        }
+    }
+
+    function dealCards() {
+        while (playerHand.length < 6 && deck.length > 0) playerHand.push(deck.pop());
+        while (botHand.length < 6 && deck.length > 0) botHand.push(deck.pop());
+        playerHand.sort((a,b) => cardValue(a) - cardValue(b));
+
+        if (deck.length === 0) {
+            if (playerHand.length === 0 && botHand.length === 0) endGame("Ничья");
+            else if (playerHand.length === 0) endGame("Победа");
+            else if (botHand.length === 0) endGame("Поражение");
+        }
+    }
+
+    function endGame(result) {
+        gameActive = false;
+        document.getElementById('statusText').innerText = result === "Победа" ? "🏆 Ты победил!" : (result === "Поражение" ? "💀 Ты проиграл (Дурак)!" : "Ничья");
+        fetch('/save_card_result', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ player_name: playerName, result: result })
+        }).then(() => setTimeout(() => location.reload(), 2000));
+        updateUI();
+    }
+</script>
+{% endblock %}

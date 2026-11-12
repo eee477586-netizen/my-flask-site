@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .menu-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 60vh;
+        text-align: center;
+    }
+    .menu-title {
+        color: #00f2fe;
+        text-shadow: 0 0 10px #00f2fe;
+        font-size: 36px;
+        margin-bottom: 10px;
+    }
+    .menu-subtitle {
+        color: #aaa;
+        margin-bottom: 40px;
+        font-size: 18px;
+    }
+    .mode-buttons {
+        display: flex;
+        gap: 30px;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    .mode-card {
+        background: rgba(255, 255, 255, 0.05);
+        border: 2px solid rgba(0, 242, 254, 0.3);
+        border-radius: 15px;
+        padding: 30px;
+        width: 250px;
+        text-decoration: none;
+        color: white;
+        transition: all 0.3s ease;
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+    }
+    .mode-card:hover {
+        transform: translateY(-10px) scale(1.05);
+        border-color: #00f2fe;
+        box-shadow: 0 0 25px rgba(0, 242, 254, 0.4);
+        background: rgba(0, 242, 254, 0.05);
+    }
+    .mode-card.translate:hover {
+        border-color: #9b59b6;
+        box-shadow: 0 0 25px rgba(155, 89, 182, 0.4);
+        background: rgba(155, 89, 182, 0.05);
+    }
+    .mode-icon {
+        font-size: 50px;
+        margin-bottom: 20px;
+    }
+    .mode-name {
+        font-size: 22px;
+        font-weight: bold;
+        margin-bottom: 10px;
+        color: #00f2fe;
+    }
+    .mode-card.translate .mode-name {
+        color: #9b59b6;
+    }
+    .mode-desc {
+        font-size: 14px;
+        color: #aaa;
+        line-height: 1.5;
+    }
+</style>
+
+<div class="menu-container">
+    <h1 class="menu-title">Выбери режим игры</h1>
+    <p class="menu-subtitle">В какую версию "Дурака" хочешь сыграть?</p>
+
+    <div class="mode-buttons">
+        <!-- Кнопка обычного дурака -->
+        <a href="/cards/game?mode=normal" class="mode-card">
+            <div class="mode-icon">🃏</div>
+            <div class="mode-name">Обычный Дурак</div>
+            <div class="mode-desc">Классические правила. Отбивайся или бери карты.</div>
+        </a>
+
+        <!-- Кнопка переводного дурака -->
+        <a href="/cards/game?mode=translate" class="mode-card translate">
+            <div class="mode-icon">🔄</div>
+            <div class="mode-name">Переводной</div>
+            <div class="mode-desc">Можно переводить атаку на бота картой того же номинала.</div>
+        </a>
+    </div>
+</div>
+{% endblock %}

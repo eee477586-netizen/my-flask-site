@@ -1,0 +1,416 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .game-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin-top: 20px;
+    }
+    .board-wrapper {
+        position: relative;
+        padding: 10px;
+        background: rgba(0, 242, 254, 0.1);
+        border-radius: 15px;
+        box-shadow: 0 0 20px rgba(0, 242, 254, 0.4);
+    }
+    canvas {
+        border-radius: 10px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        cursor: pointer;
+    }
+    .status-panel {
+        margin-top: 20px;
+        text-align: center;
+        background: rgba(0, 0, 0, 0.4);
+        padding: 15px 30px;
+        border-radius: 10px;
+        border: 1px solid #ff007f;
+        box-shadow: 0 0 15px rgba(255, 0, 127, 0.3);
+        display: flex;
+        gap: 15px;
+        align-items: center;
+    }
+    .status-panel h3 { margin: 0; color: #ff007f; text-shadow: 0 0 5px #ff007f; }
+
+    .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 5px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: 0.3s;
+        font-family: 'Montserrat', sans-serif;
+    }
+    .btn-restart { background: linear-gradient(45deg, #00f2fe, #4facfe); color: #000; }
+    .btn-restart:hover { box-shadow: 0 0 15px #00f2fe; }
+
+    /* Стиль для кнопки подсказки */
+    .btn-hint { background: linear-gradient(45deg, #f1c40f, #f39c12); color: #000; }
+    .btn-hint:hover { box-shadow: 0 0 15px #f1c40f; transform: scale(1.05); }
+
+    .history-table { width: 100%; margin-top: 30px; border-collapse: collapse; }
+    .history-table th, .history-table td { padding: 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); text-align: center; }
+    .history-table th { color: #00f2fe; }
+</style>
+
+<div class="game-container">
+    <h2 style="color: #00f2fe; text-shadow: 0 0 10px #00f2fe;">Шашки против ИИ</h2>
+    <p>Ты играешь <b>белыми</b> (снизу).</p>
+
+    <div class="board-wrapper">
+        <canvas id="gameCanvas" width="480" height="480"></canvas>
+    </div>
+
+    <div class="status-panel">
+        <h3 id="statusText">Твой ход</h3>
+        <button class="btn btn-hint" onclick="showHint()">💡 Подсказка</button>
+        <button class="btn btn-restart" onclick="startNewGame()">Играть ещё раз</button>
+    </div>
+</div>
+
+<h3 style="margin-top: 40px; color: #fff; border-bottom: 2px solid #ff007f; padding-bottom: 10px;">Последние игры</h3>
+<table class="history-table">
+    <thead><tr><th>Игрок</th><th>Результат</th><th>Дата</th></tr></thead>
+    <tbody id="historyBody">
+        {% for game in recent_games %}
+        <tr>
+            <td>{{ game.player_name }}</td>
+            <td style="color: {% if game.result == 'Победа' %}#00f2fe{% else %}#e74c3c{% endif %};">{{ game.result }}</td>
+            <td>{{ game.date_played.strftime('%d.%m.%Y %H:%M') }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3">Пока нет сыгранных партий</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const SQUARE_SIZE = 60;
+    const BOARD_SIZE = 8;
+    const WHITE = "white";
+    const BLACK = "black";
+    const EMPTY = null;
+
+    let board = [];
+    let turn = WHITE;
+    let selectedPiece = null;
+    let validMoves = [];
+    let hintMove = null; // Переменная для хранения подсказанного хода
+    let gameOver = false;
+    let playerName = "{{ current_user.username if current_user.is_authenticated else 'Гость' }}";
+
+    function createBoard() {
+        board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(EMPTY));
+        for (let row = 0; row < 3; row++) {
+            for (let col = 0; col < BOARD_SIZE; col++) {
+                if ((row + col) % 2 === 1) board[row][col] = { color: BLACK, king: false };
+            }
+        }
+        for (let row = 5; row < 8; row++) {
+            for (let col = 0; col < BOARD_SIZE; col++) {
+                if ((row + col) % 2 === 1) board[row][col] = { color: WHITE, king: false };
+            }
+        }
+    }
+
+    function drawBoard() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for (let row = 0; row < BOARD_SIZE; row++) {
+            for (let col = 0; col < BOARD_SIZE; col++) {
+                const x = col * SQUARE_SIZE;
+                const y = row * SQUARE_SIZE;
+
+                ctx.fillStyle = (row + col) % 2 === 0 ? "#F0D9B5" : "#B58863";
+                ctx.fillRect(x, y, SQUARE_SIZE, SQUARE_SIZE);
+
+                // Обычная подсветка выбранной шашки
+                if (selectedPiece && selectedPiece.row === row && selectedPiece.col === col) {
+                    ctx.strokeStyle = "#FFD700";
+                    ctx.lineWidth = 4;
+                    ctx.strokeRect(x + 2, y + 2, SQUARE_SIZE - 4, SQUARE_SIZE - 4);
+                }
+
+                // Обычная подсветка ходов
+                if (validMoves.some(m => m.row === row && m.col === col)) {
+                    ctx.fillStyle = "rgba(46, 204, 113, 0.5)";
+                    ctx.fillRect(x, y, SQUARE_SIZE, SQUARE_SIZE);
+                }
+
+                // ПОДСКАЗКА: Рисуем фиолетовую рамку и стрелку
+                if (hintMove) {
+                    if (hintMove.startR === row && hintMove.startC === col) {
+                        ctx.strokeStyle = "#9b59b6"; // Фиолетовый
+                        ctx.lineWidth = 4;
+                        ctx.strokeRect(x + 2, y + 2, SQUARE_SIZE - 4, SQUARE_SIZE - 4);
+                        // Рисуем звездочку на шашке
+                        ctx.fillStyle = "#9b59b6";
+                        ctx.font = "20px Arial";
+                        ctx.textAlign = "center";
+                        ctx.textBaseline = "middle";
+                        ctx.fillText("⭐", x + SQUARE_SIZE/2, y + SQUARE_SIZE/2);
+                    }
+                    if (hintMove.endR === row && hintMove.endC === col) {
+                        ctx.fillStyle = "rgba(155, 89, 182, 0.7)"; // Фиолетовая заливка
+                        ctx.fillRect(x, y, SQUARE_SIZE, SQUARE_SIZE);
+                    }
+                }
+
+                const piece = board[row][col];
+                if (piece) {
+                    const cx = x + SQUARE_SIZE / 2;
+                    const cy = y + SQUARE_SIZE / 2;
+                    const radius = SQUARE_SIZE / 2 - 8;
+
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
+                    ctx.fillStyle = piece.color === WHITE ? "#FFFFFF" : "#333333";
+                    ctx.fill();
+                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = piece.color === WHITE ? "#555" : "#000";
+                    ctx.stroke();
+
+                    if (piece.king) {
+                        ctx.fillStyle = piece.color === WHITE ? "#000" : "#FFF";
+                        ctx.font = "20px Arial";
+                        ctx.textAlign = "center";
+                        ctx.textBaseline = "middle";
+                        ctx.fillText("👑", cx, cy);
+                    }
+                }
+            }
+        }
+    }
+
+    canvas.addEventListener('click', (e) => {
+        if (turn !== WHITE || gameOver) return;
+
+        hintMove = null; // Сбрасываем подсказку при клике
+
+        const rect = canvas.getBoundingClientRect();
+        const col = Math.floor((e.clientX - rect.left) / SQUARE_SIZE);
+        const row = Math.floor((e.clientY - rect.top) / SQUARE_SIZE);
+
+        if (row < 0 || row >= 8 || col < 0 || col >= 8) return;
+
+        if (selectedPiece && validMoves.some(m => m.row === row && m.col === col)) {
+            makeMove(selectedPiece.row, selectedPiece.col, row, col);
+            selectedPiece = null;
+            validMoves = [];
+            drawBoard();
+
+            turn = BLACK;
+            document.getElementById('statusText').innerText = "Ход Бота...";
+            setTimeout(botMove, 500);
+            return;
+        }
+
+        const piece = board[row][col];
+        if (piece && piece.color === WHITE) {
+            selectedPiece = { row, col };
+            validMoves = getValidMoves(row, col, WHITE);
+            drawBoard();
+        } else {
+            selectedPiece = null;
+            validMoves = [];
+            drawBoard();
+        }
+    });
+
+    function getValidMoves(row, col, color) {
+        const piece = board[row][col];
+        if (!piece) return [];
+        const king = piece.king;
+        let dirs = king ? [[-1,-1], [-1,1], [1,-1], [1,1]] :
+                   (color === WHITE ? [[-1,-1], [-1,1]] : [[1,-1], [1,1]]);
+
+        let captures = [];
+        let moves = [];
+
+        for (let [dr, dc] of dirs) {
+            let midR = row + dr, midC = col + dc;
+            let landR = row + 2*dr, landC = col + 2*dc;
+
+            if (landR >= 0 && landR < 8 && landC >= 0 && landC < 8) {
+                let enemy = board[midR][midC];
+                if (enemy && enemy.color !== color && board[landR][landC] === EMPTY) {
+                    captures.push({ row: landR, col: landC });
+                }
+            }
+        }
+
+        if (captures.length > 0) return captures;
+
+        for (let [dr, dc] of dirs) {
+            let nr = row + dr, nc = col + dc;
+            if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && board[nr][nc] === EMPTY) {
+                moves.push({ row: nr, col: nc });
+            }
+        }
+        return moves;
+    }
+
+    function makeMove(startR, startC, endR, endC) {
+        const piece = board[startR][startC];
+        if (Math.abs(startR - endR) === 2) {
+            const midR = (startR + endR) / 2;
+            const midC = (startC + endC) / 2;
+            board[midR][midC] = EMPTY;
+        }
+        board[endR][endC] = piece;
+        board[startR][startC] = EMPTY;
+
+        if (piece.color === WHITE && endR === 0) piece.king = true;
+        if (piece.color === BLACK && endR === 7) piece.king = true;
+    }
+
+    // --- ЛОГИКА ПОДСКАЗКИ ---
+    function showHint() {
+        if (turn !== WHITE || gameOver) return;
+
+        let bestScore = -Infinity;
+        let bestMove = null;
+        let allMoves = getAllMoves(WHITE); // Ищем ходы для БЕЛЫХ
+
+        if (allMoves.length === 0) return;
+
+        // Оцениваем каждый возможный ход за белых
+        for (let move of allMoves) {
+            let boardCopy = JSON.parse(JSON.stringify(board));
+            let piece = boardCopy[move.startR][move.startC];
+
+            if (Math.abs(move.startR - move.endR) === 2) {
+                boardCopy[(move.startR + move.endR)/2][(move.startC + move.endC)/2] = EMPTY;
+            }
+            boardCopy[move.endR][move.endC] = piece;
+            boardCopy[move.startR][move.startC] = EMPTY;
+
+            // Оцениваем доску (так как мы ИГРАЕМ ЗА БЕЛЫХ, хороший ход дает отрицательный счет для черных,
+            // поэтому мы инвертируем оценку: чем меньше очков у черных, тем лучше для нас)
+            let score = -evaluateBoard(boardCopy);
+
+            // Если съедаем шашку - это отличный ход
+            if (Math.abs(move.startR - move.endR) === 2) score += 50;
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestMove = move;
+            }
+        }
+
+        if (bestMove) {
+            hintMove = bestMove; // Сохраняем ход для отрисовки
+            drawBoard();
+        }
+    }
+
+    function botMove() {
+        if (turn !== BLACK || gameOver) return;
+        let bestScore = -Infinity;
+        let bestMove = null;
+        let allMoves = getAllMoves(BLACK);
+
+        if (allMoves.length === 0) { endGame("Победа"); return; }
+
+        for (let move of allMoves) {
+            let boardCopy = JSON.parse(JSON.stringify(board));
+            let piece = boardCopy[move.startR][move.startC];
+            if (Math.abs(move.startR - move.endR) === 2) {
+                boardCopy[(move.startR + move.endR)/2][(move.startC + move.endC)/2] = EMPTY;
+            }
+            boardCopy[move.endR][move.endC] = piece;
+            boardCopy[move.startR][move.startC] = EMPTY;
+
+            let score = evaluateBoard(boardCopy);
+            if (Math.abs(move.startR - move.endR) === 2) score += 50;
+
+            if (score > bestScore) { bestScore = score; bestMove = move; }
+        }
+
+        if (bestMove) {
+            makeMove(bestMove.startR, bestMove.startC, bestMove.endR, bestMove.endC);
+            drawBoard();
+            turn = WHITE;
+            document.getElementById('statusText').innerText = "Твой ход";
+            checkWin();
+        }
+    }
+
+    function getAllMoves(color) {
+        let moves = [];
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                if (board[r][c] && board[r][c].color === color) {
+                    let valid = getValidMoves(r, c, color);
+                    for (let v of valid) {
+                        moves.push({ startR: r, startC: c, endR: v.row, endC: v.col });
+                    }
+                }
+            }
+        }
+        return moves;
+    }
+
+    function evaluateBoard(b) {
+        let score = 0;
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                if (b[r][c]) {
+                    let val = b[r][c].king ? 30 : 10;
+                    if (b[r][c].color === BLACK) {
+                        score += val;
+                        if (r > 4) score += 5;
+                    } else {
+                        score -= val;
+                    }
+                }
+            }
+        }
+        return score;
+    }
+
+    function checkWin() {
+        let whiteCount = 0, blackCount = 0;
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                if (board[r][c]?.color === WHITE) whiteCount++;
+                if (board[r][c]?.color === BLACK) blackCount++;
+            }
+        }
+
+        if (whiteCount === 0) endGame("Поражение");
+        else if (blackCount === 0) endGame("Победа");
+        else {
+            if (turn === BLACK && getAllMoves(BLACK).length === 0) endGame("Победа");
+            if (turn === WHITE && getAllMoves(WHITE).length === 0) endGame("Поражение");
+        }
+    }
+
+    function endGame(result) {
+        gameOver = true;
+        document.getElementById('statusText').innerText = result === "Победа" ? "🏆 Ты победил!" : "💀 Ты проиграл!";
+        fetch('/save_game_result', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ player_name: playerName, result: result })
+        }).then(() => setTimeout(() => location.reload(), 1500));
+    }
+
+    function startNewGame() {
+        createBoard();
+        turn = WHITE;
+        selectedPiece = null;
+        validMoves = [];
+        hintMove = null;
+        gameOver = false;
+        document.getElementById('statusText').innerText = "Твой ход";
+        drawBoard();
+    }
+
+    createBoard();
+    drawBoard();
+</script>
+{% endblock %}
